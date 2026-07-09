@@ -6,6 +6,12 @@ Clash Jump Manager 是一个 Windows 本地 Web 工具，用来管理 Clash Verg
 
 程序打包后是单个 Windows exe。启动后会在本机监听 `127.0.0.1:8766`，Web UI 使用 Go `embed.FS` 内嵌，不依赖全局 Python 或 Node.js。
 
+## 与 Clash Verge Rev 的关系
+
+本项目是面向 [Clash Verge Rev](https://github.com/clash-verge-rev/clash-verge-rev) / Mihomo 配置文件的非官方辅助工具。
+
+本项目不属于 Clash Verge Rev 官方项目，也未获得其官方背书、赞助或维护。它只是读取本机 Clash Verge Rev 配置目录，并在用户确认后管理 profile script 中的 `dialer-proxy` 覆盖脚本。
+
 ## 功能
 
 - 读取 Clash Verge Rev 的 `profiles.yaml`、订阅缓存 YAML 和订阅脚本。

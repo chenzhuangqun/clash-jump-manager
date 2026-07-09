@@ -1,0 +1,766 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Clash 跳板管理器</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  :root {
+    --bg: #101218;
+    --panel: #181b22;
+    --panel2: #20242d;
+    --line: #303541;
+    --text: #e7eaf0;
+    --muted: #9aa2b2;
+    --blue: #6c8aff;
+    --green: #36b36a;
+    --red: #ef5f5f;
+    --amber: #d6a642;
+  }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background: var(--bg);
+    color: var(--text);
+    font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", sans-serif;
+  }
+  .shell { max-width: 1180px; height: 100vh; margin: 0 auto; padding: 20px; display: flex; flex-direction: column; }
+  .topbar {
+    display: flex; align-items: center; gap: 12px; justify-content: space-between;
+    padding: 14px 16px; background: var(--panel2); border: 1px solid var(--line);
+    border-radius: 8px 8px 0 0;
+  }
+  .brand-status { display: flex; align-items: center; gap: 28px; min-width: 0; }
+  h1 { margin: 0; font-size: 16px; font-weight: 650; letter-spacing: 0; }
+  .topbar-right { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; justify-content: flex-end; }
+  .global-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .status { display: flex; align-items: center; gap: 10px; color: var(--muted); flex-wrap: wrap; justify-content: flex-end; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); display: inline-block; }
+  .dot.on { background: var(--green); box-shadow: 0 0 0 3px #36b36a22; }
+  .switch { position: relative; display: inline-flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; }
+  .switch input { position: absolute; opacity: 0; pointer-events: none; }
+  .switch-slider {
+    position: relative; width: 42px; height: 22px; border-radius: 999px; border: 1px solid var(--line);
+    background: #171a21; transition: background .16s ease, border-color .16s ease;
+  }
+  .switch-slider::after {
+    content: ""; position: absolute; left: 3px; top: 3px; width: 16px; height: 16px; border-radius: 50%;
+    background: var(--muted); transition: transform .16s ease, background .16s ease;
+  }
+  .switch input:checked + .switch-slider { background: #36b36a22; border-color: #36b36a88; }
+  .switch input:checked + .switch-slider::after { transform: translateX(20px); background: var(--green); }
+  .switch-text { color: var(--text); }
+  .grid {
+    display: grid; grid-template-columns: 300px minmax(0, 1fr); flex: 1 1 auto; min-height: 0;
+    border: 1px solid var(--line); border-top: 0; background: var(--panel);
+  }
+  .sidebar { min-height: 0; border-right: 1px solid var(--line); background: var(--panel2); overflow: hidden; display: flex; flex-direction: column; }
+  .sidebar-head, .section-head {
+    padding: 10px 14px; color: var(--muted); font-weight: 650; border-bottom: 1px solid var(--line);
+  }
+  .subs { overflow: auto; }
+  .sub {
+    width: 100%; text-align: left; color: var(--text); background: transparent; border: 0; border-bottom: 1px solid var(--line);
+    padding: 12px 14px; cursor: pointer; font: inherit;
+  }
+  .sub:hover { background: #ffffff06; }
+  .sub.active { background: #6c8aff16; box-shadow: inset 3px 0 0 var(--blue); }
+  .sub-name { font-weight: 650; margin-bottom: 4px; }
+  .sub-meta { color: var(--muted); font-size: 12px; display: flex; gap: 6px; flex-wrap: wrap; }
+  .tag { display: inline-flex; align-items: center; height: 20px; padding: 0 7px; border-radius: 4px; border: 1px solid var(--line); color: var(--muted); font-size: 12px; }
+  .tag.blue { color: var(--blue); border-color: #6c8aff55; background: #6c8aff18; }
+  .tag.green { color: var(--green); border-color: #36b36a55; background: #36b36a18; }
+  .tag.amber { color: var(--amber); border-color: #d6a64255; background: #d6a64218; }
+  .main { min-height: 0; display: grid; grid-template-rows: minmax(180px, 1fr) auto; min-width: 0; }
+  .summary-band {
+    border: 1px solid var(--line); border-top: 0; background: var(--panel2);
+  }
+  .summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .summary > div { padding: 14px 16px; border-right: 1px solid var(--line); min-width: 0; }
+  .summary > div:last-child { border-right: 0; }
+  .pending-summary {
+    display: none; padding: 8px 16px; border-top: 1px solid var(--line);
+    color: var(--amber); background: #d6a64210;
+  }
+  .pending-summary.show { display: block; }
+  .label { color: var(--muted); font-size: 12px; margin-bottom: 4px; }
+  .value { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .nodes { min-height: 0; overflow: auto; }
+  .node {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center;
+    width: 100%; padding: 11px 14px; border: 0; border-bottom: 1px solid var(--line);
+    background: transparent; color: var(--text); text-align: left; font: inherit; cursor: pointer;
+  }
+  .node:hover { background: #ffffff06; }
+  .node.active { background: #6c8aff16; box-shadow: inset 3px 0 0 var(--blue); }
+  .node-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .node-detail { color: var(--muted); font-size: 12px; margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .selection-actions {
+    display: flex; gap: 8px; flex-wrap: wrap; align-items: center; padding: 12px 14px; border-top: 1px solid var(--line); background: var(--panel2);
+  }
+  button {
+    border: 1px solid var(--line); background: #171a21; color: var(--text); border-radius: 6px;
+    padding: 8px 11px; font: inherit; cursor: pointer; min-height: 34px;
+  }
+  button:hover { border-color: #4b5262; background: #20242d; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  button.primary { background: var(--blue); border-color: var(--blue); color: white; }
+  button.success { background: var(--green); border-color: var(--green); color: white; }
+  button.success:disabled { background: #2a2f39; border-color: var(--line); color: var(--muted); opacity: 1; }
+  button.danger { color: var(--red); }
+  select {
+    min-height: 34px; border-radius: 6px; border: 1px solid var(--line); background: #171a21; color: var(--text); padding: 0 8px;
+  }
+  .modal-backdrop {
+    position: fixed; inset: 0; background: #0009; display: none; align-items: center; justify-content: center;
+    padding: 24px; z-index: 30;
+  }
+  .modal-backdrop.open { display: flex; }
+  .modal {
+    width: min(940px, 100%); max-height: min(760px, calc(100vh - 48px)); display: flex; flex-direction: column;
+    background: #151923; border: 1px solid #3b4556; border-radius: 8px; box-shadow: 0 24px 80px #000c;
+  }
+  .modal-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+  .modal-title { font-weight: 650; }
+  .modal-body { padding: 14px; overflow: auto; }
+  pre {
+    margin: 0; white-space: pre-wrap; word-break: break-word; color: #dce2ee;
+    background: #0d0f15; border: 1px solid var(--line); border-radius: 6px; padding: 10px;
+  }
+  .toast {
+    position: fixed; top: 18px; left: 50%; transform: translateX(-50%);
+    background: var(--panel2); border: 1px solid var(--line); color: var(--text);
+    padding: 10px 14px; border-radius: 6px; box-shadow: 0 8px 28px #0008; z-index: 20;
+  }
+  .toast.error { border-color: #ef5f5f88; color: #ffd7d7; }
+  .empty { padding: 32px 14px; text-align: center; color: var(--muted); }
+  @media (max-width: 860px) {
+    .shell { height: auto; min-height: 100vh; }
+    .grid { grid-template-columns: 1fr; flex: 0 0 auto; min-height: calc(100vh - 150px); }
+    .sidebar { border-right: 0; border-bottom: 1px solid var(--line); max-height: 300px; }
+    .summary { grid-template-columns: 1fr; }
+    .summary > div { border-right: 0; border-bottom: 1px solid var(--line); }
+  }
+</style>
+</head>
+<body>
+<div class="shell">
+  <div class="topbar">
+    <div class="brand-status">
+      <h1>Clash 跳板管理器</h1>
+      <div class="status" title="Clash 当前实际脚本状态">
+        <span class="dot" id="statusDot"></span>
+        <span id="statusText">加载中</span>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <label class="switch" title="切换本工具的待应用启用设置">
+        <input type="checkbox" id="toggleJump" onchange="toggleJumpMode()">
+        <span class="switch-slider"></span>
+        <span class="switch-text">启用</span>
+      </label>
+      <div class="global-actions">
+        <button onclick="loadRuntimeStatus()">检测状态</button>
+        <button onclick="loadDiagnostics()">详细诊断</button>
+        <button onclick="loadPreview()">预览脚本</button>
+        <button class="success" id="btnApply" onclick="applyConfig()" disabled>应用配置</button>
+      </div>
+    </div>
+  </div>
+
+  <section class="summary-band">
+    <div class="summary">
+      <div>
+        <div class="label">已生效跳板源</div>
+        <div class="value" id="sourceSummary">-</div>
+      </div>
+      <div>
+        <div class="label">已生效目标订阅</div>
+        <div class="value" id="targetSummary">-</div>
+      </div>
+      <div>
+        <div class="label">实际状态</div>
+        <div class="value" id="runtimeSummary">-</div>
+      </div>
+    </div>
+    <div class="pending-summary" id="pendingSummary"></div>
+  </section>
+
+  <div class="grid">
+    <aside class="sidebar">
+      <div class="sidebar-head">订阅列表</div>
+      <div class="subs" id="subList"><div class="empty">加载中...</div></div>
+    </aside>
+
+    <main class="main">
+      <section class="nodes" id="nodeArea">
+        <div class="empty">选择左侧订阅查看节点</div>
+      </section>
+
+      <section class="selection-actions">
+        <button id="btnSource" onclick="setSelectedAsSource()" disabled>设为跳板源</button>
+        <button id="btnTarget" onclick="setSelectedAsTarget()" disabled>加入目标</button>
+        <button id="btnExact" onclick="setExactServerPortRule()" disabled>匹配全部节点</button>
+        <button id="btnRemove" onclick="removeSelected()" disabled>移除选择</button>
+      </section>
+
+    </main>
+  </div>
+</div>
+<div id="toastHost"></div>
+<div class="modal-backdrop" id="modalBackdrop" onclick="backdropClose(event)">
+  <section class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <div class="modal-head">
+      <div class="modal-title" id="modalTitle">输出</div>
+      <button onclick="closeModal()">关闭</button>
+    </div>
+    <div class="modal-body" id="modalBody"></div>
+  </section>
+</div>
+
+<script>
+const API = '';
+const state = {
+  subs: [],
+  nodes: {},
+  selectedSub: null,
+  selectedNode: null,
+  jumpState: null,
+  appliedState: null,
+  draft: null,
+  runtime: null,
+  preview: null,
+};
+
+async function api(path, opts = {}) {
+  const res = await fetch(API + path, {
+    headers: { 'Content-Type': 'application/json' },
+    ...opts,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || res.statusText);
+  }
+  return res.json();
+}
+
+function toast(message, type = 'success') {
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  el.textContent = message;
+  document.getElementById('toastHost').appendChild(el);
+  setTimeout(() => el.remove(), 3200);
+}
+
+function getSub(uid) {
+  return state.subs.find(s => s.uid === uid);
+}
+
+function fmtBytes(value) {
+  if (!value) return '0';
+  if (value >= 1024 ** 4) return (value / 1024 ** 4).toFixed(1) + ' TB';
+  if (value >= 1024 ** 3) return (value / 1024 ** 3).toFixed(1) + ' GB';
+  if (value >= 1024 ** 2) return (value / 1024 ** 2).toFixed(0) + ' MB';
+  return value + ' B';
+}
+
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, ch => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[ch]));
+}
+
+function cloneState(value) {
+  return JSON.parse(JSON.stringify(value || { enabled: false, targets: [], target_rules: {} }));
+}
+
+function ensureDraft() {
+  if (!state.draft) state.draft = cloneState(state.appliedState || state.jumpState);
+  state.draft.targets = state.draft.targets || [];
+  state.draft.target_rules = state.draft.target_rules || {};
+}
+
+function hasDraftChanges() {
+  return JSON.stringify(state.draft || {}) !== JSON.stringify(state.appliedState || {});
+}
+
+function pendingPrefix() {
+  return hasDraftChanges() ? '待应用 ' : '';
+}
+
+async function fetchDraftPreview(issueToken = false) {
+  ensureDraft();
+  return api(`/api/jump/preview?token=${issueToken ? '1' : '0'}`, {
+    method: 'POST',
+    body: JSON.stringify({ state: state.draft }),
+  }).catch(() => null);
+}
+
+async function previewDraft() {
+  state.preview = await fetchDraftPreview(false);
+  render();
+}
+
+function appliedSummaryState() {
+  const runtime = state.runtime || {};
+  if (runtime.active) {
+    const targetName = runtime.target_name || runtime.target_uid;
+    const matchLabel = matchSummaryLabel(runtime.match_summary);
+    return {
+      source_name: runtime.source_name,
+      source_sub_uid: runtime.source_sub_uid,
+      target_names: [targetName && matchLabel ? `${targetName}（${matchLabel}）` : targetName].filter(Boolean),
+    };
+  }
+  const applied = state.appliedState || {};
+  const source = applied.source;
+  return {
+    source_name: source?.node?.name || '',
+    source_sub_uid: source?.sub_uid || '',
+    target_names: (applied.targets || []).map(uid => {
+      const name = getSub(uid)?.name || uid;
+      const label = matchRuleLabel(applied.target_rules?.[uid]);
+      return label ? `${name}（${label}）` : name;
+    }),
+  };
+}
+
+function defaultMatchRuleForSelectedTarget() {
+  const nodes = state.nodes[state.selectedSub] || [];
+  const counts = {};
+  for (const node of nodes) {
+    if (node.server) counts[node.server] = (counts[node.server] || 0) + 1;
+  }
+  let bestServer = '';
+  let bestCount = 0;
+  for (const [server, count] of Object.entries(counts)) {
+    if (count > bestCount || (count === bestCount && (!bestServer || server < bestServer))) {
+      bestServer = server;
+      bestCount = count;
+    }
+  }
+  return bestServer ? { mode: 'dominant_server', servers: [bestServer], server_ports: [], node_names: [] } : { mode: 'dominant_server', servers: [], server_ports: [], node_names: [] };
+}
+
+function allServerPortRuleForSelectedTarget() {
+  const nodes = state.nodes[state.selectedSub] || [];
+  const seen = new Set();
+  const serverPorts = [];
+  for (const node of nodes) {
+    if (!node.server || !node.port) continue;
+    const key = `${node.server}:${node.port}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    serverPorts.push({ server: node.server, port: Number(node.port) });
+  }
+  return { mode: 'server_port', servers: [], server_ports: serverPorts, node_names: [] };
+}
+
+function matchRuleLabel(rule) {
+  if (!rule) return '';
+  if (rule.mode === 'server_port') return '全部节点';
+  if (rule.mode === 'manual') return `指定节点 ${(rule.node_names || []).length} 个`;
+  return '部分节点';
+}
+
+async function loadAll() {
+  try {
+    const [subs, jumpState, runtime] = await Promise.all([
+      api('/api/subscriptions'),
+      api('/api/jump/state'),
+      api('/api/runtime/status').catch(() => null),
+    ]);
+    state.subs = subs;
+    state.jumpState = jumpState;
+    state.appliedState = cloneState(jumpState);
+    state.draft = cloneState(jumpState);
+    state.runtime = runtime;
+    state.preview = await fetchDraftPreview(false);
+    render();
+  } catch (err) {
+    toast('无法连接后端: ' + err.message, 'error');
+    document.getElementById('statusText').textContent = '连接失败';
+  }
+}
+
+async function loadNodes(uid) {
+  if (state.nodes[uid]) return;
+  state.nodes[uid] = await api(`/api/subscriptions/${uid}/nodes`).catch(() => []);
+}
+
+function render() {
+  renderSubs();
+  renderSummary();
+  renderPendingSummary();
+  renderNodes();
+  renderActions();
+}
+
+function renderSubs() {
+  const js = state.draft || state.jumpState || {};
+  const html = state.subs.map(sub => {
+    const used = (sub.traffic?.upload || 0) + (sub.traffic?.download || 0);
+    const tags = [];
+    if (js.source?.sub_uid === sub.uid) tags.push(`<span class="tag blue">${pendingPrefix()}跳板源</span>`);
+    if ((js.targets || []).includes(sub.uid)) tags.push(`<span class="tag green">${pendingPrefix()}目标</span>`);
+    const rule = js.target_rules?.[sub.uid];
+    if (rule) tags.push(`<span class="tag amber">${escapeHtml(pendingPrefix() + matchRuleLabel(rule))}</span>`);
+    return `<button class="sub ${state.selectedSub === sub.uid ? 'active' : ''}" onclick="selectSub('${sub.uid}')">
+      <div class="sub-name">${escapeHtml(sub.current ? '★ ' : '')}${escapeHtml(sub.name || sub.uid)}</div>
+      <div class="sub-meta">
+        <span>${escapeHtml(sub.home || sub.uid)}</span>
+        <span>${fmtBytes(used)} / ${fmtBytes(sub.traffic?.total || 0)}</span>
+      </div>
+      <div class="sub-meta">${tags.join('')}</div>
+    </button>`;
+  }).join('');
+  document.getElementById('subList').innerHTML = html || '<div class="empty">未找到订阅</div>';
+}
+
+function renderSummary() {
+  const applied = appliedSummaryState();
+  const draft = state.draft || state.appliedState || {};
+  const sourceSub = applied.source_sub_uid ? getSub(applied.source_sub_uid) : null;
+  const dot = document.getElementById('statusDot');
+  dot.className = `dot ${runtimeStatusIsActive(state.runtime) ? 'on' : ''}`;
+  document.getElementById('statusText').textContent = runtimeStatusLabel(state.runtime);
+  document.getElementById('toggleJump').checked = !!draft.enabled;
+  document.getElementById('sourceSummary').textContent = applied.source_name ? `${applied.source_name} (${sourceSub?.name || applied.source_sub_uid || '未匹配订阅'})` : '-';
+  document.getElementById('targetSummary').textContent = applied.target_names.length ? applied.target_names.join(', ') : '-';
+  document.getElementById('runtimeSummary').textContent = runtimeSummaryText(state.runtime);
+}
+
+function renderPendingSummary() {
+  const el = document.getElementById('pendingSummary');
+  if (!el) return;
+  const changed = hasDraftChanges() || !!state.preview?.has_changes;
+  el.className = `pending-summary ${changed ? 'show' : ''}`;
+  el.textContent = changed ? `${draftSummaryText()}。刷新页面会回到已生效配置。` : '';
+}
+
+function draftSummaryText() {
+  const draft = state.draft || {};
+  const sourceSub = draft.source?.sub_uid ? getSub(draft.source.sub_uid) : null;
+  const sourceText = draft.source?.node?.name ? `${draft.source.node.name} (${sourceSub?.name || draft.source.sub_uid})` : '未选择跳板源';
+  const targetText = (draft.targets || []).map(uid => {
+    const name = getSub(uid)?.name || uid;
+    const label = matchRuleLabel(draft.target_rules?.[uid]);
+    return label ? `${name}（${label}）` : name;
+  }).join(', ') || '未选择目标';
+  return `待应用配置：${draft.enabled ? '启用' : '停用'}；跳板源 ${sourceText}；目标 ${targetText}`;
+}
+
+function renderNodes() {
+  const area = document.getElementById('nodeArea');
+  if (!state.selectedSub) {
+    area.innerHTML = '<div class="empty">选择左侧订阅查看节点</div>';
+    return;
+  }
+  const nodes = state.nodes[state.selectedSub];
+  if (!nodes) {
+    area.innerHTML = '<div class="empty">加载中...</div>';
+    return;
+  }
+  const js = state.draft || state.jumpState || {};
+  const isTarget = (js.targets || []).includes(state.selectedSub);
+  const sourceNode = js.source?.sub_uid === state.selectedSub ? js.source.node.name : '';
+  area.innerHTML = nodes.map(node => {
+    const tags = [];
+    if (sourceNode && sourceNode === node.name) tags.push('<span class="tag blue">跳板</span>');
+    if (isTarget) tags.push('<span class="tag green">目标</span>');
+    const index = nodes.indexOf(node);
+    return `<button class="node ${node.name === state.selectedNode ? 'active' : ''}" onclick="selectNode(${index})">
+      <div>
+        <div class="node-name">${escapeHtml(node.name)}</div>
+        <div class="node-detail">${escapeHtml(node.type || 'unknown')} · ${escapeHtml(node.server)}:${escapeHtml(node.port)}</div>
+      </div>
+      <div>${tags.join('')}</div>
+    </button>`;
+  }).join('') || '<div class="empty">该订阅暂无节点缓存</div>';
+}
+
+function renderActions() {
+  const hasSelection = !!state.selectedSub;
+  const js = state.draft || state.jumpState || {};
+  const isSource = js.source?.sub_uid === state.selectedSub;
+  const isTarget = (js.targets || []).includes(state.selectedSub);
+  document.getElementById('btnSource').disabled = !hasSelection || !state.selectedNode;
+  document.getElementById('btnTarget').disabled = !hasSelection || isTarget;
+  document.getElementById('btnExact').disabled = !hasSelection || !isTarget;
+  document.getElementById('btnRemove').disabled = !isSource && !isTarget;
+  document.getElementById('btnApply').disabled = !state.preview?.ready || !state.preview?.has_changes;
+}
+
+async function selectSub(uid) {
+  state.selectedSub = uid;
+  state.selectedNode = null;
+  render();
+  await loadNodes(uid);
+  render();
+}
+
+function selectNode(index) {
+  const nodes = state.nodes[state.selectedSub] || [];
+  const node = nodes[index];
+  state.selectedNode = node ? node.name : null;
+  render();
+}
+
+async function setSelectedAsSource() {
+  ensureDraft();
+  const nodes = state.nodes[state.selectedSub] || [];
+  if (!nodes.length) {
+    toast('该订阅没有节点缓存', 'error');
+    return;
+  }
+  const selected = state.selectedNode;
+  if (!selected) {
+    toast('请选择一个节点作为跳板源', 'error');
+    return;
+  }
+  const node = nodes.find(item => item.name === selected);
+  if (!node) {
+    toast('未找到选中的节点', 'error');
+    return;
+  }
+  state.draft.source = { sub_uid: state.selectedSub, node };
+  await previewDraft();
+  toast('已加入待应用配置');
+}
+
+async function setSelectedAsTarget() {
+  ensureDraft();
+  if (!(state.draft.targets || []).includes(state.selectedSub)) {
+    state.draft.targets = [...(state.draft.targets || []), state.selectedSub];
+  }
+  state.draft.target_rules = state.draft.target_rules || {};
+  state.draft.target_rules[state.selectedSub] = defaultMatchRuleForSelectedTarget();
+  await previewDraft();
+  toast('已加入待应用配置');
+}
+
+async function setExactServerPortRule() {
+  ensureDraft();
+  if (!(state.draft.targets || []).includes(state.selectedSub)) {
+    state.draft.targets = [...(state.draft.targets || []), state.selectedSub];
+  }
+  state.draft.target_rules = state.draft.target_rules || {};
+  state.draft.target_rules[state.selectedSub] = allServerPortRuleForSelectedTarget();
+  await previewDraft();
+  toast('已加入待应用配置');
+}
+
+async function removeSelected() {
+  ensureDraft();
+  if (state.draft.source?.sub_uid === state.selectedSub) {
+    state.draft.source = null;
+    state.draft.targets = [];
+    state.draft.target_rules = {};
+    state.draft.enabled = false;
+  } else {
+    state.draft.targets = (state.draft.targets || []).filter(uid => uid !== state.selectedSub);
+    if (state.draft.target_rules) delete state.draft.target_rules[state.selectedSub];
+  }
+  await previewDraft();
+  toast('已从待应用配置移除');
+}
+
+async function toggleJumpMode() {
+  ensureDraft();
+  const enabled = document.getElementById('toggleJump').checked;
+  try {
+    state.draft.enabled = enabled;
+    await previewDraft();
+  } catch (err) {
+    toast('切换失败: ' + err.message, 'error');
+    renderSummary();
+  }
+}
+
+function showModal(title, html) {
+  document.getElementById('modalTitle').textContent = title;
+  document.getElementById('modalBody').innerHTML = html;
+  document.getElementById('modalBackdrop').classList.add('open');
+}
+
+function closeModal() {
+  document.getElementById('modalBackdrop').classList.remove('open');
+}
+
+function backdropClose(event) {
+  if (event.target.id === 'modalBackdrop') closeModal();
+}
+
+async function loadPreview() {
+  const preview = await fetchDraftPreview(true);
+  state.preview = preview;
+  if (!preview.ready) {
+    showModal('预览', `<div class="empty">${escapeHtml(preview.reason || '尚未准备好')}</div>`);
+    return preview;
+  }
+  if (!preview.has_changes) {
+    showModal('写入预览', '<div class="empty">当前配置已是最新，无需应用</div>');
+    return preview;
+  }
+  const html = preview.items.map(item => `<div style="margin-bottom:12px;">
+    <div class="label">${escapeHtml(item.path)}</div>
+    <div style="margin-bottom:8px;">
+      <span class="tag amber">${escapeHtml(matchSummaryLabel(item.match_summary))}</span>
+      ${item.will_backup ? '<span class="tag green">写入前备份</span>' : '<span class="tag">新建脚本</span>'}
+      ${item.managed ? '<span class="tag blue">本工具管理</span>' : '<span class="tag amber">现有脚本会备份</span>'}
+    </div>
+    <pre>${escapeHtml(item.script_redacted)}</pre>
+  </div>`).join('');
+  showModal('写入预览', html || '<div class="empty">无写入项</div>');
+  return preview;
+}
+
+function scriptKindLabel(kind) {
+  return {
+    managed_jump: '本工具跳板',
+    managed_noop: '本工具已停用',
+    foreign_jump: '第三方跳板',
+    normal: '普通脚本',
+    none: '无脚本',
+  }[kind] || kind || '-';
+}
+
+function matchSummaryLabel(summary) {
+  if (!summary) return '';
+  if (summary.startsWith('server+port x')) return '全部节点';
+  if (summary.startsWith('server x')) return '部分节点';
+  if (summary.startsWith('manual nodes x')) {
+    const count = summary.slice('manual nodes x'.length);
+    return `指定节点 ${count} 个`;
+  }
+  return summary;
+}
+
+function runtimeSummaryText(data) {
+  if (!data) return '未检测';
+  if (data.script_kind === 'foreign_jump') return '检测到第三方跳板';
+  if (data.active && data.source_name) return `${data.target_name || data.current_uid} -> ${data.source_name}`;
+  if (data.active) return scriptKindLabel(data.script_kind);
+  return data.reason || '未开启';
+}
+
+function runtimeStatusIsActive(data) {
+  return !!data?.active;
+}
+
+function runtimeStatusLabel(data) {
+  if (!data) return '未检测实际状态';
+  if (data.active) return '实际已启用';
+  return '实际未启用';
+}
+
+function runtimeStatusHtml(data) {
+  const source = data.source_name
+    ? `${escapeHtml(data.source_name)} (${escapeHtml(data.source_sub_name || data.source_sub_uid || `${data.source_server}:${data.source_port}`)})`
+    : '-';
+  const disableButton = data.can_disable_foreign
+    ? '<div style="margin-top:10px;"><button class="danger" onclick="disableForeignJump()">备份并停用第三方跳板脚本</button></div>'
+    : '';
+  const resetButton = '<div style="margin-top:10px;"><button class="danger" id="btnResetManaged" onclick="resetConfig()">恢复本工具脚本</button></div>';
+  return `
+    <div class="label">当前实际状态</div>
+    <pre>状态: ${escapeHtml(data.reason || '-')}
+当前订阅: ${escapeHtml(data.current_name || data.current_uid || '-')}
+目标订阅: ${escapeHtml(data.target_name || data.target_uid || '-')}
+脚本类型: ${escapeHtml(scriptKindLabel(data.script_kind))}
+脚本 UID: ${escapeHtml(data.script_uid || '-')}
+跳板源: ${source}
+匹配: ${escapeHtml(matchSummaryLabel(data.match_summary) || '-')}</pre>
+    ${disableButton}
+    ${resetButton}
+  `;
+}
+
+async function loadRuntimeStatus() {
+  const data = await api('/api/runtime/status');
+  state.runtime = data;
+  renderSummary();
+  showModal('检测状态', runtimeStatusHtml(data));
+  return data;
+}
+
+async function disableForeignJump() {
+  const data = state.runtime || await api('/api/runtime/status');
+  if (!data.can_disable_foreign || !data.script_uid) {
+    toast('当前没有可停用的第三方跳板脚本', 'error');
+    return;
+  }
+  if (!confirm('这不是本工具生成的脚本，可能包含你手工写的逻辑。将先备份，再停用其中的跳板效果。确认继续？')) return;
+  try {
+    const result = await api(`/api/scripts/${encodeURIComponent(data.script_uid)}/disable-foreign-jump`, {
+      method: 'POST',
+      body: JSON.stringify({ confirm: true }),
+    });
+    await loadAll();
+    toast(result.message);
+    await loadRuntimeStatus();
+  } catch (err) {
+    toast('停用失败: ' + err.message, 'error');
+  }
+}
+
+async function loadDiagnostics() {
+  const data = await api('/api/diagnostics');
+  const rows = data.remotes.map(remote => `<tr>
+    <td>${escapeHtml(remote.name)}</td>
+    <td>${escapeHtml(remote.node_count)}</td>
+    <td>${escapeHtml(remote.script_uid || '-')}</td>
+    <td>${remote.script_exists ? '是' : '否'}</td>
+    <td>${remote.script_managed ? '是' : '否'}</td>
+    <td>${escapeHtml(matchSummaryLabel(remote.match_summary) || '-')}</td>
+  </tr>`).join('');
+  showModal('诊断', `
+    <div class="label">配置目录</div>
+    <pre>${escapeHtml(data.config_dir)}
+profiles.yaml: ${data.profiles_yaml_exists ? '存在' : '不存在'}
+profiles: ${data.profiles_dir_exists ? '存在' : '不存在'}
+备份目录: ${escapeHtml(data.backup_dir)}</pre>
+    <table style="width:100%; border-collapse:collapse; margin-top:10px;">
+      <thead><tr><th align="left">订阅</th><th align="left">节点</th><th align="left">脚本</th><th align="left">存在</th><th align="left">受管理</th><th align="left">匹配</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `);
+}
+
+async function applyConfig() {
+  try {
+    if (!state.preview?.has_changes) {
+      toast('当前配置已是最新，无需应用');
+      return;
+    }
+    const preview = await loadPreview();
+    if (!preview.ready || !preview.has_changes) return;
+    const count = preview.change_count || preview.items.length;
+    if (!confirm(`将写入 ${count} 个脚本；已有脚本会先备份。确认应用？`)) return;
+    const result = await api('/api/apply', {
+      method: 'POST',
+      body: JSON.stringify({ preview_token: preview.preview_token }),
+    });
+    await loadAll();
+    toast(result.message);
+  } catch (err) {
+    toast('应用失败: ' + err.message, 'error');
+  }
+}
+
+async function resetConfig() {
+  if (!confirm('只会恢复本工具生成/管理过的脚本，并保留备份；不会处理第三方脚本。确认继续？')) return;
+  try {
+    const result = await api('/api/reset', { method: 'POST' });
+    await loadAll();
+    toast(result.message);
+  } catch (err) {
+    toast('恢复失败: ' + err.message, 'error');
+  }
+}
+
+loadAll();
+</script>
+</body>
+</html>
